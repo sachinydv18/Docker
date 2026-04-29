@@ -1,0 +1,46 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Check build output exists
+        run: test -d dist && echo "dist/ exists" || (echo "dist/ missing" && exit 1)
+
+      - name: Build Docker image
+        run: docker build -t tourism-app:ci .
+
+      - name: Run container and verify it serves
+        run: |
+          docker run -d --name ci-container -p 8080:80 tourism-app:ci
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080)
+          echo "Response status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            docker logs ci-container
+            exit 1
+          fi
+          docker stop ci-container && docker rm ci-container

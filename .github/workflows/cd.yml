@@ -1,0 +1,77 @@
+name: CD - Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy files to EC2 via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "."
+          target: "/home/${{ secrets.EC2_USER }}/app"
+          rm: true
+
+      - name: SSH into EC2 - Install Docker if missing, then Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # ── Install Docker if not already installed ──────────
+            if ! command -v docker &> /dev/null; then
+              echo "Docker not found, installing..."
+              sudo apt-get update -y
+              sudo apt-get install -y ca-certificates curl
+              sudo install -m 0755 -d /etc/apt/keyrings
+              sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+              sudo chmod a+r /etc/apt/keyrings/docker.asc
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+              sudo apt-get update -y
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker $USER
+              echo "Docker installed successfully"
+            else
+              echo "Docker already installed: $(docker --version)"
+            fi
+
+            # ── Deploy the app ───────────────────────────────────
+            cd /home/$USER/app
+
+            sudo docker build -t tourism-app:latest .
+
+            sudo docker stop tourism-app 2>/dev/null || true
+            sudo docker rm   tourism-app 2>/dev/null || true
+
+            sudo docker run -d \
+              --name tourism-app \
+              --restart always \
+              -p 80:80 \
+              tourism-app:latest
+
+            # ── Verify container is actually running ─────────────
+            sleep 5
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:80)
+            echo "Health check status: $STATUS"
+            if [ "$STATUS" != "200" ]; then
+              echo "DEPLOYMENT FAILED - container not serving on port 80"
+              sudo docker logs tourism-app
+              exit 1
+            fi
+
+            echo "SUCCESS - App is live on port 80"
+            sudo docker ps
