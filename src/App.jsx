@@ -238,6 +238,7 @@ export default function App() {
           <p>
             Unlike many tourist cities, Pokhara works for every type of traveller: trekkers preparing for 14-day high-altitude circuits, families on a week's holiday, retired couples seeking mountain views and lakeside calm, and backpackers who arrive intending to stay three days and end up staying three weeks. It is that kind of place.
           </p>
+          <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Cum tenetur a repellat autem dolorem aspernatur, dolor pariatur ipsum perspiciatis labore.</p>
         </div>
       </section>
 
